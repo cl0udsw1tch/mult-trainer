@@ -3,14 +3,15 @@
 import curses
 import random
 import time
+from collections import deque
 from dataclasses import dataclass
 
-
+LOOKAHEAD = 1  # number of upcoming problems shown above the current one
 MIN_FACTOR = 2
 MAX_FACTOR = 9
-TEST_DURATION = 30.0
+TEST_DURATION = 10.0
 
-RESTART_KEYS = (ord("r"), ord("R"))
+RESTART_KEYS = (ord("-"),)
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,8 @@ class Problem:
 class MultiplicationTrainer:
     def __init__(self):
         self.current = self._new_problem()
-        self.next_problem = self._new_problem()
+        self.upcoming = deque(self._new_problem() for _ in range(LOOKAHEAD))
+        self.last_answer = ""
 
         self.input_buffer = ""
 
@@ -48,19 +50,16 @@ class MultiplicationTrainer:
         )
 
     def _advance(self):
-        self.current = self.next_problem
-        self.next_problem = self._new_problem()
+        self.last_answer = self.current.answer
+        self.upcoming.append(self._new_problem())
+        self.current = self.upcoming.popleft()
         self.input_buffer = ""
 
     def elapsed(self) -> float:
         if self.start_time is None:
             return 0.0
 
-        end = (
-            self.end_time
-            if self.end_time is not None
-            else time.perf_counter()
-        )
+        end = self.end_time if self.end_time is not None else time.perf_counter()
 
         return min(end - self.start_time, TEST_DURATION)
 
@@ -113,15 +112,16 @@ def draw(stdscr, trainer: MultiplicationTrainer):
 
     y = 3
 
-    next_text = trainer.next_problem.text
-    stdscr.addstr(
-        y,
-        max(0, (width - len(next_text)) // 2),
-        next_text,
-        curses.A_DIM,
-    )
-
-    y += 1
+    # Furthest upcoming problem at the top, nearest right above current.
+    for problem in reversed(trainer.upcoming):
+        text = problem.text
+        stdscr.addstr(
+            y,
+            max(0, (width - len(text)) // 2),
+            text,
+            curses.A_DIM,
+        )
+        y += 1
 
     current_text = trainer.current.text
     stdscr.addstr(
@@ -133,11 +133,18 @@ def draw(stdscr, trainer: MultiplicationTrainer):
 
     y += 1
 
-    input_text = trainer.input_buffer or "_"
+    if trainer.input_buffer:
+        input_text, attr = trainer.input_buffer, curses.A_NORMAL
+    elif trainer.last_answer:
+        input_text, attr = trainer.last_answer, curses.A_DIM
+    else:
+        input_text, attr = "_", curses.A_NORMAL
+
     stdscr.addstr(
         y,
         max(0, (width - len(input_text)) // 2),
         input_text,
+        attr,
     )
 
     y += 3
@@ -180,10 +187,7 @@ def run_test(stdscr):
     while True:
         draw(stdscr, trainer)
 
-        if (
-            trainer.start_time is not None
-            and trainer.elapsed() >= TEST_DURATION
-        ):
+        if trainer.start_time is not None and trainer.elapsed() >= TEST_DURATION:
             trainer.end_time = trainer.start_time + TEST_DURATION
             break
 
