@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 
+import argparse
 import curses
+import json
 import random
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
 
 LOOKAHEAD = 1  # number of upcoming problems shown above the current one
 MIN_FACTOR = 2
 MAX_FACTOR = 9
-TEST_DURATION = 10.0
+DEFAULT_DURATION = 10.0
+DB_PATH = Path(__file__).resolve().parent / "data" / "sessions.db.json"
 
 RESTART_KEYS = (ord("-"),)
 
@@ -29,7 +34,9 @@ class Problem:
 
 
 class MultiplicationTrainer:
-    def __init__(self):
+    def __init__(self, duration: float):
+        self.duration = duration
+
         self.current = self._new_problem()
         self.upcoming = deque(self._new_problem() for _ in range(LOOKAHEAD))
         self.last_answer = ""
@@ -39,9 +46,15 @@ class MultiplicationTrainer:
         self.completed = 0
         self.errors = 0
         self.attempts = 0
+        self.correct_keys = 0
 
         self.start_time = None
         self.end_time = None
+        self.started_at = None  # wall clock, for the session record
+        self.exit = None  # "quit" | "restart" when the run is cut short
+        self.timed_out = False
+
+        self.times = []  # seconds since start at which each question was solved
 
     def _new_problem(self) -> Problem:
         return Problem(
@@ -61,39 +74,100 @@ class MultiplicationTrainer:
 
         end = self.end_time if self.end_time is not None else time.perf_counter()
 
-        return min(end - self.start_time, TEST_DURATION)
+        return min(end - self.start_time, self.duration)
+
+    def check_timeout(self) -> bool:
+        if self.start_time is None or self.elapsed() < self.duration:
+            return False
+
+        self.end_time = self.start_time + self.duration
+        self.timed_out = True
+        return True
+
+    def start(self):
+        self.start_time = time.perf_counter()
+        self.started_at = datetime.now().astimezone()
 
     def ppm(self) -> float:
-        return self.attempts / TEST_DURATION * 60.0
+        return self.attempts / self.duration * 60.0
 
     def accuracy(self) -> float:
-        if self.attempts == 0:
+        keys = self.correct_keys + self.errors
+        if keys == 0:
             return 100.0
 
-        return self.completed / self.attempts * 100.0
+        return self.correct_keys / keys * 100.0
 
     def time_remaining(self) -> float:
         if self.start_time is None:
-            return TEST_DURATION
+            return self.duration
 
-        return max(0.0, TEST_DURATION - self.elapsed())
+        return max(0.0, self.duration - self.elapsed())
 
     def handle_digit(self, digit: str):
         answer = self.current.answer
         position = len(self.input_buffer)
 
         if digit != answer[position]:
+            self.errors += 1
             return
 
+        self.correct_keys += 1
         self.input_buffer += digit
 
         if len(self.input_buffer) == len(answer):
             self.completed += 1
             self.attempts += 1
+            self.times.append(round(time.perf_counter() - self.start_time, 3))
             self._advance()
 
     def handle_backspace(self):
         self.input_buffer = self.input_buffer[:-1]
+
+    def status(self) -> str:
+        if self.timed_out:
+            return "completed"
+
+        return "quit" if self.exit == "quit" else "restarted"
+
+    def to_record(self) -> dict:
+        if self.end_time is None:
+            self.end_time = time.perf_counter()
+
+        elapsed = self.duration if self.timed_out else self.elapsed()
+
+        return {
+            "startedAt": self.started_at.isoformat(timespec="milliseconds"),
+            "endedAt": (self.started_at + timedelta(seconds=elapsed)).isoformat(
+                timespec="milliseconds"
+            ),
+            "duration": self.duration,
+            "lookahead": LOOKAHEAD,
+            "status": self.status(),
+            "times": self.times,
+        }
+
+
+def save_session(trainer: MultiplicationTrainer):
+    # A run that never received its first digit never started; nothing to log.
+    if trainer.start_time is None:
+        return
+
+    sessions = []
+    if DB_PATH.exists():
+        sessions = json.loads(DB_PATH.read_text())["sessions"]
+
+    sessions.append(trainer.to_record())
+
+    # One session per line keeps the committed file's diffs readable.
+    body = ",\n".join(
+        "  " + json.dumps(session, separators=(",", ":")) for session in sessions
+    )
+
+    DB_PATH.parent.mkdir(exist_ok=True)
+    tmp = DB_PATH.with_suffix(".json.tmp")
+    tmp.write_text('{"version": 1, "sessions": [\n' + body + "\n]}\n")
+    tmp.replace(DB_PATH)
 
 
 def draw(stdscr, trainer: MultiplicationTrainer):
@@ -177,45 +251,56 @@ def draw(stdscr, trainer: MultiplicationTrainer):
     stdscr.refresh()
 
 
-def run_test(stdscr):
-    trainer = MultiplicationTrainer()
+def run_test(stdscr, duration: float):
+    trainer = MultiplicationTrainer(duration)
 
     curses.curs_set(0)
     stdscr.keypad(True)
     stdscr.nodelay(False)
 
+    try:
+        _run_loop(stdscr, trainer)
+    except KeyboardInterrupt:
+        trainer.exit = "quit"
+
+    return trainer
+
+
+def _run_loop(stdscr, trainer: MultiplicationTrainer):
     while True:
         draw(stdscr, trainer)
 
-        if trainer.start_time is not None and trainer.elapsed() >= TEST_DURATION:
-            trainer.end_time = trainer.start_time + TEST_DURATION
-            break
+        if trainer.check_timeout():
+            return
 
         key = stdscr.getch()
 
+        # Checked before acting on Esc/restart so a key pressed after time ran
+        # out still records the run as completed.
+        timed_out = trainer.check_timeout()
+
         if key == 27:
-            return None
+            trainer.exit = "quit"
+            return
 
         if key in RESTART_KEYS:
-            return "restart"
+            trainer.exit = "restart"
+            return
+
+        if timed_out:
+            return
 
         if trainer.start_time is None:
             if ord("0") <= key <= ord("9"):
-                trainer.start_time = time.perf_counter()
+                trainer.start()
             else:
                 continue
-
-        if trainer.elapsed() >= TEST_DURATION:
-            trainer.end_time = trainer.start_time + TEST_DURATION
-            break
 
         if ord("0") <= key <= ord("9"):
             trainer.handle_digit(chr(key))
 
         elif key in (curses.KEY_BACKSPACE, 127, 8):
             trainer.handle_backspace()
-
-    return trainer
 
 
 def show_results(stdscr, trainer):
@@ -270,17 +355,28 @@ def show_results(stdscr, trainer):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Multiplication sprint trainer")
+    parser.add_argument(
+        "-d",
+        "--duration",
+        type=float,
+        default=DEFAULT_DURATION,
+        help="session length in seconds (default: %(default)s)",
+    )
+    args = parser.parse_args()
+
     try:
         while True:
-            result = curses.wrapper(run_test)
+            trainer = curses.wrapper(run_test, args.duration)
+            save_session(trainer)
 
-            if result is None:
+            if trainer.exit == "quit":
                 break
 
-            if result == "restart":
+            if trainer.exit == "restart":
                 continue
 
-            curses.wrapper(lambda stdscr: show_results(stdscr, result))
+            curses.wrapper(lambda stdscr: show_results(stdscr, trainer))
 
     except KeyboardInterrupt:
         pass
