@@ -1,13 +1,14 @@
 import { Grid } from "@/components/ui/layout";
 import { Delta, StatTile } from "@/components/ui/Stat";
 import { fmtClock, fmtDate, fmtRate, fmtSeconds } from "@/lib/format";
-import { argmax, elapsed, median, pps, questionTimes } from "@/lib/stats";
+import { argmax, elapsed, median, outcome, pps, questionTimes } from "@/lib/stats";
 import type { Session } from "@/lib/types";
 
 /** Sessions compared for "recent pace": the last N against the N before. */
 const RECENT = 10;
 
 export function SummaryTiles({ sessions, completed }: { sessions: Session[]; completed: Session[] }) {
+  const ranClock = sessions.filter((s) => outcome(s) === "ran-clock").length;
   const rates = completed.map(pps);
   const best = argmax(rates);
   const recent = median(rates.slice(-RECENT));
@@ -21,7 +22,7 @@ export function SummaryTiles({ sessions, completed }: { sessions: Session[]; com
       <StatTile
         label="Sessions"
         value={completed.length}
-        sub={`completed · ${sessions.length - completed.length} restarted/quit`}
+        sub={`completed · ${ranClock} ran the clock · ${sessions.length - completed.length - ranClock} restarted/quit`}
       />
       <StatTile
         label="Recent pace"

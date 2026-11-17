@@ -3,13 +3,18 @@
 import { useMemo, useState } from "react";
 import { Segmented } from "@/components/ui/Controls";
 import { Toolbar } from "@/components/ui/Page";
-import { isCompleted } from "@/lib/stats";
+import { type Outcome, outcome } from "@/lib/stats";
 import type { Session } from "@/lib/types";
 
 const DAY_MS = 86_400_000;
 const RANGES = [7, 30, 90] as const;
 type Range = (typeof RANGES)[number] | "all";
-type Status = "all" | "completed" | "incomplete";
+type Status = "all" | "completed" | "ran-clock" | "cut-short";
+
+const matchesStatus = (status: Status, how: Outcome) =>
+  status === "all" ||
+  status === how ||
+  (status === "cut-short" && (how === "restarted" || how === "quit"));
 
 const distinct = (values: number[]) => [...new Set(values)].sort((a, b) => a - b);
 
@@ -26,7 +31,7 @@ export function useSessionFilters(all: Session[]) {
       (s) =>
         (length === "all" || s.duration === length) &&
         (lookahead === "all" || s.lookahead === lookahead) &&
-        (status === "all" || (status === "completed") === isCompleted(s)) &&
+        matchesStatus(status, outcome(s)) &&
         Date.parse(s.startedAt) >= cutoff,
     );
   }, [all, length, lookahead, range, status]);
@@ -62,7 +67,8 @@ export function useSessionFilters(all: Session[]) {
           options={[
             { value: "all" as Status, label: "All" },
             { value: "completed" as Status, label: "Completed" },
-            { value: "incomplete" as Status, label: "Restarted/quit" },
+            { value: "ran-clock" as Status, label: "Ran the clock" },
+            { value: "cut-short" as Status, label: "Restarted/quit" },
           ]}
         />
       )}

@@ -51,6 +51,9 @@ function simulate(start: Date, duration: number, lookahead: number, day: number,
   ]);
   const cutoffMs =
     status === "completed" ? duration * 1000 : randInt(800, Math.min(duration * 1000, 4500));
+  // Some timed-out runs where you stop answering partway and let the clock run.
+  const stopMs =
+    status === "completed" && rand() < 0.07 ? randInt(duration * 300, duration * 850) : Infinity;
 
   // Facts and wrong digits shape the timing but aren't stored: the database
   // only keeps when each question was solved.
@@ -74,7 +77,7 @@ function simulate(start: Date, duration: number, lookahead: number, day: number,
       Math.exp(0.25 * gaussian());
     const misses = rand() < (0.02 + difficulty(a, b) * 0.15) / skill ? randInt(1, 2) : 0;
     t += Math.round((seconds + misses * 0.15) * 1000);
-    if (t >= cutoffMs) break;
+    if (t >= cutoffMs || t >= stopMs) break;
     times.push(t / 1000);
   }
 

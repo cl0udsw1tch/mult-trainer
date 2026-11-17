@@ -6,8 +6,9 @@ import { Grid, Row } from "@/components/ui/layout";
 import { LinkButton } from "@/components/ui/LinkButton";
 import { Text } from "@/components/ui/typography";
 import { Page, PageHeader } from "@/components/ui/Page";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, outcomeLabel } from "@/lib/format";
 import { routes, sessionHref } from "@/lib/routes";
+import { outcome } from "@/lib/stats";
 import type { Session } from "@/lib/types";
 import { PerSecondCard } from "./PerSecondCard";
 import { QuestionTimesCard } from "./QuestionTimesCard";
@@ -29,7 +30,7 @@ export function SessionView({ sessions, index, db }: { sessions: Session[]; inde
           active="history"
           meta={<DbPicker {...db} />}
         />
-        <Text tone="secondary">{`${session.duration}s · lookahead ${session.lookahead} · ${session.status}`}</Text>
+        <Text tone="secondary">{`${session.duration}s · lookahead ${session.lookahead} · ${outcomeLabel[outcome(session)]}`}</Text>
         <Row gap="sm" wrap>
           <LinkButton href={prev ? sessionHref(prev) : null}>← Previous</LinkButton>
           <LinkButton href={next ? sessionHref(next) : null}>Next →</LinkButton>

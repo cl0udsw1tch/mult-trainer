@@ -1,3 +1,4 @@
+import { type Outcome, outcome } from "./stats";
 import type { Session } from "./types";
 
 export const fmtDate = (iso: string) =>
@@ -20,8 +21,17 @@ export const fmtClock = (seconds: number) => {
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
 };
 
-export const sessionLabel = (s: Session) =>
-  `${fmtDate(s.startedAt)} · ${s.duration}s · lookahead ${s.lookahead}${s.status === "completed" ? "" : ` · ${s.status}`}`;
+export const outcomeLabel: Record<Outcome, string> = {
+  completed: "completed",
+  "ran-clock": "ran the clock",
+  restarted: "restarted",
+  quit: "quit",
+};
+
+export const sessionLabel = (s: Session) => {
+  const how = outcome(s);
+  return `${fmtDate(s.startedAt)} · ${s.duration}s · lookahead ${s.lookahead}${how === "completed" ? "" : ` · ${outcomeLabel[how]}`}`;
+};
 
 /** Tooltip title for the i-th session of a list. */
 export const sessionTitle = (sessions: Session[], i: number) => `#${i + 1} · ${sessionLabel(sessions[i])}`;

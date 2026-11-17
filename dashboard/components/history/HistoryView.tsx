@@ -9,9 +9,9 @@ import { Card } from "@/components/ui/Card";
 import { ClientOnly } from "@/components/ui/ClientOnly";
 import { DataTable, type SortState } from "@/components/ui/DataTable";
 import { EmptyState, Page, PageHeader } from "@/components/ui/Page";
-import { fmtDate, fmtRate, fmtSeconds } from "@/lib/format";
+import { fmtDate, fmtRate, fmtSeconds, outcomeLabel } from "@/lib/format";
 import { sessionHref } from "@/lib/routes";
-import { median, questionTimes, rateOf } from "@/lib/stats";
+import { median, outcome, questionTimes, rateOf } from "@/lib/stats";
 import type { Session } from "@/lib/types";
 
 const DIGITS = 2;
@@ -51,7 +51,7 @@ const COLUMNS: { label: string; cell: (r: Row) => ReactNode; sortBy?: (r: Row) =
   },
   { label: "Length", cell: (r) => `${r.session.duration}s`, sortBy: (r) => r.session.duration },
   { label: "Lookahead", cell: (r) => r.session.lookahead, sortBy: (r) => r.session.lookahead },
-  { label: "Status", cell: (r) => r.session.status },
+  { label: "Status", cell: (r) => outcomeLabel[outcome(r.session)] },
   { label: "Solved", cell: (r) => r.solved, sortBy: (r) => r.solved },
   { label: "q/s", cell: (r) => fmtRate(r.rate), sortBy: (r) => r.rate },
   { label: "Median question", cell: (r) => fmtSeconds(r.median, DIGITS), sortBy: (r) => r.median },

@@ -4,7 +4,27 @@ import type { Session } from "./types";
 // at which each question was solved. Question i (0-based) appeared when
 // question i - 1 was solved, or at 0 for the first.
 
-export const isCompleted = (s: Session) => s.status === "completed";
+/**
+ * A timed-out run whose last answer came more than this long before the end:
+ * you'd stopped answering and let the clock run out. No single question takes
+ * this long, so a trailing gap this big isn't just a slow question.
+ */
+export const IDLE_GAP_SECONDS = 1;
+
+export type Outcome = "completed" | "ran-clock" | "restarted" | "quit";
+
+/**
+ * How a run ended. The stored status only says whether the timer ran out;
+ * "ran the clock" is derived from the gap after the last answer.
+ */
+export function outcome(s: Session): Outcome {
+  if (s.status !== "completed") return s.status;
+  const lastAnswer = s.times.length ? s.times[s.times.length - 1] : 0;
+  return s.duration - lastAnswer > IDLE_GAP_SECONDS ? "ran-clock" : "completed";
+}
+
+/** Played to the end: the only runs stats that need a full session use. */
+export const isCompleted = (s: Session) => outcome(s) === "completed";
 
 /** Seconds on the clock: the full duration, or until the run was cut short. */
 export const elapsed = (s: Session) => (Date.parse(s.endedAt) - Date.parse(s.startedAt)) / 1000;
@@ -169,7 +189,7 @@ export const localDay = (d: Date) =>
 
 export const ordinals = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-/** Questions per second over the time actually played (restarted/quit runs included). */
+/** Questions per second over the time on the clock (incomplete runs included). */
 export const rateOf = (s: Session) => (elapsed(s) > 0 ? s.times.length / elapsed(s) : NaN);
 
 export function stdDev(values: number[]) {

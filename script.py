@@ -131,6 +131,9 @@ class MultiplicationTrainer:
         return "quit" if self.exit == "quit" else "restarted"
 
     def to_record(self) -> dict:
+        # The loop only notices the timeout on the next keypress, so a run left
+        # idle past its duration and then exited (e.g. Ctrl-C) still counts.
+        self.check_timeout()
         if self.end_time is None:
             self.end_time = time.perf_counter()
 
@@ -148,26 +151,31 @@ class MultiplicationTrainer:
         }
 
 
-def save_session(trainer: MultiplicationTrainer):
-    # A run that never received its first digit never started; nothing to log.
-    if trainer.start_time is None:
-        return
+def read_sessions(path: Path) -> list:
+    if not path.exists():
+        return []
 
-    sessions = []
-    if DB_PATH.exists():
-        sessions = json.loads(DB_PATH.read_text())["sessions"]
+    return json.loads(path.read_text())["sessions"]
 
-    sessions.append(trainer.to_record())
 
+def write_sessions(sessions: list, path: Path):
     # One session per line keeps the committed file's diffs readable.
     body = ",\n".join(
         "  " + json.dumps(session, separators=(",", ":")) for session in sessions
     )
 
-    DB_PATH.parent.mkdir(exist_ok=True)
-    tmp = DB_PATH.with_suffix(".json.tmp")
+    path.parent.mkdir(exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
     tmp.write_text('{"version": 1, "sessions": [\n' + body + "\n]}\n")
-    tmp.replace(DB_PATH)
+    tmp.replace(path)
+
+
+def save_session(trainer: MultiplicationTrainer):
+    # A run that never received its first digit never started; nothing to log.
+    if trainer.start_time is None:
+        return
+
+    write_sessions(read_sessions(DB_PATH) + [trainer.to_record()], DB_PATH)
 
 
 def draw(stdscr, trainer: MultiplicationTrainer):

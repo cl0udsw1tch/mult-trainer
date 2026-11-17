@@ -29,9 +29,9 @@ export function VolumeCard({ sessions }: { sessions: Session[] }) {
   return (
     <Card
       title="Practice volume"
-      description="Sessions per day."
+      description="Sessions per day. Not completed covers restarts, quits and runs where you let the clock run out."
       table={{
-        columns: ["Day", "Completed", "Restarted/quit", "Time"],
+        columns: ["Day", "Completed", "Not completed", "Time"],
         rows: perDay.map((d) => [d.day, d.done, d.other, fmtClock(d.seconds)]),
       }}
     >
@@ -42,7 +42,7 @@ export function VolumeCard({ sessions }: { sessions: Session[] }) {
         footer={(i) => `${fmtClock(perDay[i].seconds)} on the clock`}
         series={[
           { label: "Completed", data: perDay.map((d) => d.done), mark: "bars", color: "series1" },
-          { label: "Restarted/quit", data: perDay.map((d) => d.other), mark: "bars", color: "muted" },
+          { label: "Not completed", data: perDay.map((d) => d.other), mark: "bars", color: "muted" },
         ]}
       />
     </Card>
